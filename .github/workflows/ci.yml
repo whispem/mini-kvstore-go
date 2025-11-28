@@ -34,23 +34,29 @@ jobs:
         run: go mod verify
 
       - name: Run tests
+        shell: bash
         run: |
-          set -e
-          for pkg in $(go list ./pkg/... ./internal/...); do
-            echo "Testing $pkg..."
-            go test -v -race -coverprofile=coverage.out "$pkg" || true
-          done
+          echo "Running tests on ${{ matrix.os }}..."
+          if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
+            # Ubuntu: tests + coverage
+            go test -v -race -coverprofile=coverage.out ./pkg/... ./internal/... || true
+          else
+            # Mac/Windows: tests seulement
+            go test -v -race ./pkg/... ./internal/... || true
+          fi
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v4
         with:
           files: ./coverage.out
+          fail_ci_if_error: true
+          flags: unittests
+          name: codecov-ubuntu
 
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
