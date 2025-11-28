@@ -18,6 +18,9 @@ func SaveSnapshot(idx *Index, path string) error {
 	defer file.Close()
 
 	w := bufio.NewWriter(file)
+	defer func() {
+		_ = w.Flush() // ensure flush error ignored
+	}()
 
 	// Write magic
 	if _, err := w.Write(snapshotMagic[:]); err != nil {
@@ -40,6 +43,7 @@ func SaveSnapshot(idx *Index, path string) error {
 			continue
 		}
 
+		// Write key length and key
 		keyBytes := []byte(key)
 		keyLen := uint32(len(keyBytes))
 		if err := binary.Write(w, binary.LittleEndian, keyLen); err != nil {
@@ -49,17 +53,13 @@ func SaveSnapshot(idx *Index, path string) error {
 			return err
 		}
 
+		// Write segment ID and offset
 		if err := binary.Write(w, binary.LittleEndian, entry.SegmentID); err != nil {
 			return err
 		}
 		if err := binary.Write(w, binary.LittleEndian, entry.Offset); err != nil {
 			return err
 		}
-	}
-
-	// Ensure everything is flushed
-	if err := w.Flush(); err != nil {
-		return err
 	}
 
 	return nil
@@ -75,6 +75,7 @@ func LoadSnapshot(path string) (*Index, error) {
 
 	r := bufio.NewReader(file)
 
+	// Read and verify magic
 	var magic [8]byte
 	if _, err := io.ReadFull(r, magic[:]); err != nil {
 		return nil, err
@@ -83,6 +84,7 @@ func LoadSnapshot(path string) (*Index, error) {
 		return nil, ErrInvalidMagic
 	}
 
+	// Read number of entries
 	var numEntries uint64
 	if err := binary.Read(r, binary.LittleEndian, &numEntries); err != nil {
 		return nil, err
@@ -90,7 +92,9 @@ func LoadSnapshot(path string) (*Index, error) {
 
 	idx := NewIndex()
 
+	// Read each entry
 	for i := uint64(0); i < numEntries; i++ {
+		// Read key length and key
 		var keyLen uint32
 		if err := binary.Read(r, binary.LittleEndian, &keyLen); err != nil {
 			return nil, err
@@ -102,6 +106,7 @@ func LoadSnapshot(path string) (*Index, error) {
 		}
 		key := string(keyBytes)
 
+		// Read segment ID and offset
 		var segmentID, offset uint64
 		if err := binary.Read(r, binary.LittleEndian, &segmentID); err != nil {
 			return nil, err
