@@ -35,6 +35,7 @@ type KVStore struct {
 
 // Open opens or creates a KVStore at the given directory
 func Open(dir string) (*KVStore, error) {
+	// Create directory if it doesn't exist
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, err
 	}
@@ -47,6 +48,7 @@ func Open(dir string) (*KVStore, error) {
 		maxSegmentSize: 16 * 1024 * 1024, // 16 MB
 	}
 
+	// Try to load snapshot first
 	snapshotPath := filepath.Join(dir, snapshotFile)
 	if _, err := os.Stat(snapshotPath); err == nil {
 		if idx, err := LoadSnapshot(snapshotPath); err == nil {
@@ -57,11 +59,13 @@ func Open(dir string) (*KVStore, error) {
 		}
 	}
 
+	// Find all segments
 	segments, err := findSegments(dir)
 	if err != nil {
 		return nil, err
 	}
 
+	// Replay segments
 	start := time.Now()
 	for _, segID := range segments {
 		path := segmentPath(dir, segID)
@@ -74,12 +78,15 @@ func Open(dir string) (*KVStore, error) {
 		fmt.Printf("✓ Rebuilt index from segments in %.2fs\n", time.Since(start).Seconds())
 	}
 
+	// Determine next segment ID
 	lastID := uint64(0)
 	if len(segments) > 0 {
 		lastID = segments[len(segments)-1]
 	}
+	newID := lastID + 1
 
-	if err := store.resetActiveSegment(lastID + 1); err != nil {
+	// Create active segment
+	if err := store.resetActiveSegment(newID); err != nil {
 		return nil, err
 	}
 
@@ -91,30 +98,40 @@ func (s *KVStore) Set(key string, value []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	rec := &Record{Op: OpSet, Key: key, Value: value}
+	rec := &Record{
+		Op:    OpSet,
+		Key:   key,
+		Value: value,
+	}
 
 	if err := WriteRecord(s.activeWriter, rec); err != nil {
 		return err
 	}
+
 	if err := s.activeWriter.Flush(); err != nil {
 		return err
 	}
+
 	if err := s.activeFile.Sync(); err != nil {
 		return err
 	}
 
+	// Update in-memory structures
 	valueCopy := make([]byte, len(value))
 	copy(valueCopy, value)
 	s.values[key] = valueCopy
 	s.index.Insert(key, s.activeSegmentID, 0)
 	s.bloom.Insert(key)
 
+	// Check if segment is full
 	info, err := s.activeFile.Stat()
 	if err != nil {
 		return err
 	}
 	if uint64(info.Size()) >= s.maxSegmentSize {
-		return s.rotateSegment()
+		if err := s.rotateSegment(); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -125,12 +142,14 @@ func (s *KVStore) Get(key string) ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	// Fast in-memory lookup
 	if val, ok := s.values[key]; ok {
 		result := make([]byte, len(val))
 		copy(result, val)
 		return result, nil
 	}
 
+	// Bloom filter check
 	if !s.bloom.MightContain(key) {
 		return nil, ErrNotFound
 	}
@@ -143,14 +162,19 @@ func (s *KVStore) Delete(key string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	rec := &Record{Op: OpDelete, Key: key}
+	rec := &Record{
+		Op:  OpDelete,
+		Key: key,
+	}
 
 	if err := WriteRecord(s.activeWriter, rec); err != nil {
 		return err
 	}
+
 	if err := s.activeWriter.Flush(); err != nil {
 		return err
 	}
+
 	if err := s.activeFile.Sync(); err != nil {
 		return err
 	}
@@ -219,9 +243,7 @@ func (s *KVStore) Close() error {
 		}
 	}
 	if s.activeFile != nil {
-		if err := s.activeFile.Close(); err != nil {
-			return err
-		}
+		return s.activeFile.Close()
 	}
 	return nil
 }
@@ -263,6 +285,7 @@ func (s *KVStore) replaySegment(path string, segID uint64) error {
 
 // resetActiveSegment creates a new active segment
 func (s *KVStore) resetActiveSegment(newID uint64) error {
+	// Close current segment
 	if s.activeWriter != nil {
 		if err := s.activeWriter.Flush(); err != nil {
 			return err
@@ -274,6 +297,7 @@ func (s *KVStore) resetActiveSegment(newID uint64) error {
 		}
 	}
 
+	// Open new segment
 	path := segmentPath(s.baseDir, newID)
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
