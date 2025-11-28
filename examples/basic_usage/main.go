@@ -6,17 +6,27 @@ import (
 	"os"
 
 	"github.com/whispem/mini-kvstore-go/pkg/store"
-
 )
 
 func main() {
-	db, err := store.NewStore("example.db")
+	db, err := store.Open("example.db")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer os.Remove("example.db")
+	defer func() {
+		if err := os.RemoveAll("example.db"); err != nil {
+			log.Printf("Warning: failed to remove example.db: %v", err)
+		}
+	}()
 
-	_ = db.Set("foo", []byte("bar"))   // Set a value
-	val, _ := db.Get("foo")            // Get a value
-	fmt.Println("Get foo:", string(val)) 
+	if err := db.Set("foo", []byte("bar")); err != nil {
+		log.Fatalf("Failed to set value: %v", err)
+	}
+
+	val, err := db.Get("foo")
+	if err != nil {
+		log.Fatalf("Failed to get value: %v", err)
+	}
+
+	fmt.Println("Get foo:", string(val))
 }
