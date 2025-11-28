@@ -33,19 +33,21 @@ jobs:
       - name: Verify dependencies
         run: go mod verify
 
-      - name: Run tests
-        shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
-        run: |
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            Write-Host "Running tests on Windows..."
-            go test -v -race ./pkg/... ./internal/...
-          else
-            echo "Running tests on $RUNNER_OS..."
-            go test -v -race -coverprofile=coverage.out ./pkg/... ./internal/...
-          fi
+      # Tests Linux/macOS
+      - name: Run tests on Linux/macOS
+        if: runner.os != 'Windows'
+        run: go test -v -race -coverprofile=coverage.out ./pkg/... ./internal/...
+        shell: bash
 
+      # Tests Windows
+      - name: Run tests on Windows
+        if: runner.os == 'Windows'
+        run: go test -v -race ./pkg/... ./internal/...
+        shell: pwsh
+
+      # Upload coverage (Ubuntu only)
       - name: Upload coverage to Codecov
-        if: matrix.os == 'ubuntu-latest'
+        if: runner.os == 'Linux'
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
