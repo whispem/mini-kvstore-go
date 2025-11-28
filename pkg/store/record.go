@@ -24,43 +24,39 @@ type Record struct {
 
 // WriteRecord writes a record to a writer
 func WriteRecord(w io.Writer, rec *Record) error {
-	// Write magic
 	if _, err := w.Write(Magic[:]); err != nil {
 		return err
 	}
-
-	// Write opcode
 	if _, err := w.Write([]byte{rec.Op}); err != nil {
 		return err
 	}
 
-	// Write key length and key
 	keyBytes := []byte(rec.Key)
 	keyLen := uint32(len(keyBytes))
 	if err := binary.Write(w, binary.LittleEndian, keyLen); err != nil {
 		return err
 	}
 
-	// Write value length
 	valLen := uint32(len(rec.Value))
 	if err := binary.Write(w, binary.LittleEndian, valLen); err != nil {
 		return err
 	}
 
-	// Write key
 	if _, err := w.Write(keyBytes); err != nil {
 		return err
 	}
 
-	// Write value (only for SET)
 	if rec.Op == OpSet && len(rec.Value) > 0 {
 		if _, err := w.Write(rec.Value); err != nil {
 			return err
 		}
 	}
 
-	// Compute and write checksum
-	checksum := computeChecksum(rec)
+	checksum, err := computeChecksum(rec)
+	if err != nil {
+		return err
+	}
+
 	if err := binary.Write(w, binary.LittleEndian, checksum); err != nil {
 		return err
 	}
@@ -70,7 +66,6 @@ func WriteRecord(w io.Writer, rec *Record) error {
 
 // ReadRecord reads a record from a reader
 func ReadRecord(r io.Reader) (*Record, error) {
-	// Read magic
 	var magic [2]byte
 	if _, err := io.ReadFull(r, magic[:]); err != nil {
 		if err == io.EOF {
@@ -78,37 +73,31 @@ func ReadRecord(r io.Reader) (*Record, error) {
 		}
 		return nil, err
 	}
-
 	if magic != Magic {
 		return nil, ErrInvalidMagic
 	}
 
-	// Read opcode
 	var op [1]byte
 	if _, err := io.ReadFull(r, op[:]); err != nil {
 		return nil, err
 	}
 
-	// Read key length
 	var keyLen uint32
 	if err := binary.Read(r, binary.LittleEndian, &keyLen); err != nil {
 		return nil, err
 	}
 
-	// Read value length
 	var valLen uint32
 	if err := binary.Read(r, binary.LittleEndian, &valLen); err != nil {
 		return nil, err
 	}
 
-	// Read key
 	keyBytes := make([]byte, keyLen)
 	if _, err := io.ReadFull(r, keyBytes); err != nil {
 		return nil, err
 	}
 	key := string(keyBytes)
 
-	// Read value (only for SET)
 	var value []byte
 	if op[0] == OpSet && valLen > 0 {
 		value = make([]byte, valLen)
@@ -117,7 +106,6 @@ func ReadRecord(r io.Reader) (*Record, error) {
 		}
 	}
 
-	// Read and verify checksum
 	var checksumStored uint32
 	if err := binary.Read(r, binary.LittleEndian, &checksumStored); err != nil {
 		return nil, err
@@ -129,7 +117,11 @@ func ReadRecord(r io.Reader) (*Record, error) {
 		Value: value,
 	}
 
-	checksumCalc := computeChecksum(rec)
+	checksumCalc, err := computeChecksum(rec)
+	if err != nil {
+		return nil, err
+	}
+
 	if checksumCalc != checksumStored {
 		return nil, ErrChecksumMismatch
 	}
@@ -137,24 +129,34 @@ func ReadRecord(r io.Reader) (*Record, error) {
 	return rec, nil
 }
 
-// computeChecksum calculates CRC32 for a record
-func computeChecksum(rec *Record) uint32 {
+// computeChecksum calculates CRC32 for a record and returns error
+func computeChecksum(rec *Record) (uint32, error) {
 	h := crc32.NewIEEE()
 
-	h.Write([]byte{rec.Op})
+	if _, err := h.Write([]byte{rec.Op}); err != nil {
+		return 0, err
+	}
 
 	keyBytes := []byte(rec.Key)
 	keyLen := uint32(len(keyBytes))
-	binary.Write(h, binary.LittleEndian, keyLen)
-
-	valLen := uint32(len(rec.Value))
-	binary.Write(h, binary.LittleEndian, valLen)
-
-	h.Write(keyBytes)
-
-	if rec.Op == OpSet && len(rec.Value) > 0 {
-		h.Write(rec.Value)
+	if err := binary.Write(h, binary.LittleEndian, keyLen); err != nil {
+		return 0, err
 	}
 
-	return h.Sum32()
+	valLen := uint32(len(rec.Value))
+	if err := binary.Write(h, binary.LittleEndian, valLen); err != nil {
+		return 0, err
+	}
+
+	if _, err := h.Write(keyBytes); err != nil {
+		return 0, err
+	}
+
+	if rec.Op == OpSet && len(rec.Value) > 0 {
+		if _, err := h.Write(rec.Value); err != nil {
+			return 0, err
+		}
+	}
+
+	return h.Sum32(), nil
 }
