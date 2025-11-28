@@ -7,34 +7,6 @@ on:
     branches: [ main ]
 
 jobs:
-  # ---------------------------------------------------
-  # LINT (Ubuntu only)
-  # ---------------------------------------------------
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
-
-      - name: Install dependencies
-        run: go mod tidy
-
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v4
-        with:
-          version: latest
-          args: --timeout=5m
-
-  # ---------------------------------------------------
-  # TEST (Linux only — avoids Windows/Mac issues)
-  # ---------------------------------------------------
   test:
     name: Test (Linux)
     runs-on: ubuntu-latest
@@ -48,24 +20,43 @@ jobs:
         with:
           go-version: '1.21'
 
-      - name: Install dependencies
-        run: go mod tidy
+      - name: Tidy & Download dependencies
+        run: |
+          go mod tidy
+          go mod download
 
       - name: Run tests
         run: go test -v -race -coverprofile=coverage.out ./pkg/... ./internal/...
 
-      - name: Upload coverage to Codecov
+      - name: Upload coverage
         uses: codecov/codecov-action@v4
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.out
-          fail_ci_if_error: false
 
-  # ---------------------------------------------------
-  # BUILD MULTI-OS (always green as long as build works)
-  # ---------------------------------------------------
+  lint:
+    name: Lint (Linux only)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Tidy dependencies
+        run: go mod tidy
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          args: --timeout=5m
+
   build:
-    name: Build binaries
+    name: Build Binaries
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -80,19 +71,13 @@ jobs:
         with:
           go-version: '1.21'
 
-      - name: Install dependencies
-        run: go mod tidy
+      - name: Tidy & Download dependencies
+        run: |
+          go mod tidy
+          go mod download
 
       - name: Build CLI
-        run: go build -v -o kvstore ./cmd/kvstore
+        run: go build -v ./cmd/kvstore
 
-      - name: Build Volume Server
-        run: go build -v -o volume-server ./cmd/volume-server
-
-      - name: Upload build artefacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: kvstore-${{ matrix.os }}
-          path: |
-            kvstore*
-            volume-server*
+      - name: Build Server
+        run: go build -v ./cmd/volume-server
