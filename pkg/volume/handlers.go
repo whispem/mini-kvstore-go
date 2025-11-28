@@ -3,6 +3,7 @@ package volume
 import (
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -79,7 +80,9 @@ func (s *AppState) healthCheck(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Error encoding health check response: %v", err)
+	}
 }
 
 func (s *AppState) metrics(w http.ResponseWriter, r *http.Request) {
@@ -106,7 +109,9 @@ func (s *AppState) metrics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Error encoding metrics response: %v", err)
+	}
 }
 
 func (s *AppState) putBlob(w http.ResponseWriter, r *http.Request) {
@@ -130,7 +135,9 @@ func (s *AppState) putBlob(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(meta)
+	if err := json.NewEncoder(w).Encode(meta); err != nil {
+		log.Printf("Error encoding put blob response: %v", err)
+	}
 }
 
 func (s *AppState) getBlob(w http.ResponseWriter, r *http.Request) {
@@ -153,7 +160,9 @@ func (s *AppState) getBlob(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.WriteHeader(http.StatusOK)
-	w.Write(data)
+	if _, err := w.Write(data); err != nil {
+		log.Printf("Error writing blob data: %v", err)
+	}
 }
 
 func (s *AppState) deleteBlob(w http.ResponseWriter, r *http.Request) {
@@ -178,11 +187,15 @@ func (s *AppState) listBlobs(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(keys)
+	if err := json.NewEncoder(w).Encode(keys); err != nil {
+		log.Printf("Error encoding list blobs response: %v", err)
+	}
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(ErrorResponse{Error: message})
+	if err := json.NewEncoder(w).Encode(ErrorResponse{Error: message}); err != nil {
+		log.Printf("Error encoding error response: %v", err)
+	}
 }
