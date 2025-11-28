@@ -10,9 +10,14 @@ import (
 )
 
 func setupTestStore(t *testing.T) (*KVStore, string) {
+	t.Helper()
 	dir := filepath.Join("testdata", t.Name())
-	os.RemoveAll(dir)
-	os.MkdirAll(dir, 0755)
+	if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("failed to remove test dir: %v", err)
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("failed to create test dir: %v", err)
+	}
 
 	store, err := Open(dir)
 	require.NoError(t, err)
@@ -21,8 +26,13 @@ func setupTestStore(t *testing.T) (*KVStore, string) {
 }
 
 func cleanupTestStore(t *testing.T, store *KVStore, dir string) {
-	store.Close()
-	os.RemoveAll(dir)
+	t.Helper()
+	if err := store.Close(); err != nil {
+		t.Logf("warning: failed to close store: %v", err)
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		t.Logf("warning: failed to remove test dir: %v", err)
+	}
 }
 
 func TestSetAndGet(t *testing.T) {
@@ -69,9 +79,9 @@ func TestListKeys(t *testing.T) {
 	defer cleanupTestStore(t, store, dir)
 
 	// Set multiple keys
-	store.Set("key1", []byte("value1"))
-	store.Set("key2", []byte("value2"))
-	store.Set("key3", []byte("value3"))
+	require.NoError(t, store.Set("key1", []byte("value1")))
+	require.NoError(t, store.Set("key2", []byte("value2")))
+	require.NoError(t, store.Set("key3", []byte("value3")))
 
 	keys := store.ListKeys()
 	assert.Len(t, keys, 3)
@@ -82,9 +92,17 @@ func TestListKeys(t *testing.T) {
 
 func TestPersistence(t *testing.T) {
 	dir := filepath.Join("testdata", t.Name())
-	os.RemoveAll(dir)
-	os.MkdirAll(dir, 0755)
-	defer os.RemoveAll(dir)
+	if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("failed to remove test dir: %v", err)
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("failed to create test dir: %v", err)
+	}
+	defer func() {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Logf("warning: failed to remove test dir: %v", err)
+		}
+	}()
 
 	// First session: write data
 	{
@@ -97,7 +115,7 @@ func TestPersistence(t *testing.T) {
 		err = store.Set("key2", []byte("value2"))
 		require.NoError(t, err)
 
-		store.Close()
+		require.NoError(t, store.Close())
 	}
 
 	// Second session: read data
@@ -113,7 +131,7 @@ func TestPersistence(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, []byte("value2"), val2)
 
-		store.Close()
+		require.NoError(t, store.Close())
 	}
 }
 
@@ -126,7 +144,7 @@ func TestCompaction(t *testing.T) {
 		for i := 0; i < 100; i++ {
 			key := "key"
 			val := []byte("value")
-			store.Set(key, val)
+			require.NoError(t, store.Set(key, val))
 		}
 	}
 
@@ -147,8 +165,8 @@ func TestStats(t *testing.T) {
 	store, dir := setupTestStore(t)
 	defer cleanupTestStore(t, store, dir)
 
-	store.Set("key1", []byte("value1"))
-	store.Set("key2", []byte("value2"))
+	require.NoError(t, store.Set("key1", []byte("value1")))
+	require.NoError(t, store.Set("key2", []byte("value2")))
 
 	stats := store.Stats()
 	assert.Equal(t, 2, stats.NumKeys)
@@ -158,9 +176,17 @@ func TestStats(t *testing.T) {
 
 func TestSnapshot(t *testing.T) {
 	dir := filepath.Join("testdata", t.Name())
-	os.RemoveAll(dir)
-	os.MkdirAll(dir, 0755)
-	defer os.RemoveAll(dir)
+	if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("failed to remove test dir: %v", err)
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("failed to create test dir: %v", err)
+	}
+	defer func() {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Logf("warning: failed to remove test dir: %v", err)
+		}
+	}()
 
 	// Create store and write data
 	{
@@ -170,14 +196,14 @@ func TestSnapshot(t *testing.T) {
 		for i := 0; i < 100; i++ {
 			key := "key"
 			val := []byte("value")
-			store.Set(key, val)
+			require.NoError(t, store.Set(key, val))
 		}
 
 		// Save snapshot
 		err = store.SaveSnapshot()
 		require.NoError(t, err)
 
-		store.Close()
+		require.NoError(t, store.Close())
 	}
 
 	// Reopen - should load from snapshot
@@ -189,6 +215,6 @@ func TestSnapshot(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, []byte("value"), val)
 
-		store.Close()
+		require.NoError(t, store.Close())
 	}
 }
