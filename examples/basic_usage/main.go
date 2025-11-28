@@ -5,7 +5,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/mini-kvstore-go/pkg/store"
+	"github.com/whispem/mini-kvstore-go/pkg/store"
+
 )
 
 func main() {
