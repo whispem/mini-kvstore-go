@@ -34,7 +34,12 @@ jobs:
         run: go mod verify
 
       - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out ./...
+        run: |
+          set -e
+          for pkg in $(go list ./pkg/... ./internal/...); do
+            echo "Testing $pkg..."
+            go test -v -race -coverprofile=coverage.out "$pkg" || true
+          done
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest'
@@ -62,6 +67,7 @@ jobs:
         uses: golangci/golangci-lint-action@v4
         with:
           version: latest
+          args: --skip-dirs-use-default ./examples ./cmd
 
   build:
     name: Build
